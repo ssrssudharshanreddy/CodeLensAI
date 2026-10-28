@@ -154,6 +154,9 @@ async def get_status():
     from codelens.llm.cloud_client import CloudLLMClient
     active_provider = "cloud" if isinstance(client, CloudLLMClient) else "ollama"
     active_model = cfg.cloud_model if isinstance(client, CloudLLMClient) else cfg.model_name
+    if isinstance(client, CloudLLMClient) and client.is_gemini(active_model):
+        if not CloudLLMClient.is_text_generation_model(active_model):
+            active_model = "gemini-2.0-flash"
 
     try:
         is_connected = client.check_connection()
@@ -325,7 +328,9 @@ async def stream_run_events(run_id: str):
 async def learn_stage(req: LearnRequest):
     cfg = CodeLensConfig()
     client = create_llm_client(cfg)
-    session = LearningSession(client=client)
+    from codelens.llm.cloud_client import CloudLLMClient
+    active_model = cfg.cloud_model if isinstance(client, CloudLLMClient) else cfg.model_name
+    session = LearningSession(client=client, model=active_model)
 
     try:
         if req.stage == "hint":

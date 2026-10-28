@@ -54,6 +54,9 @@ class CodeLensAgent:
             if isinstance(self.client, CloudLLMClient)
             else self.config.model_name
         )
+        if isinstance(self.client, CloudLLMClient) and self.client.is_gemini(active_model):
+            if not CloudLLMClient.is_text_generation_model(active_model):
+                active_model = "gemini-2.0-flash"
         provider_name = "Cloud LLM" if isinstance(self.client, CloudLLMClient) else "Ollama"
 
         self.logger.banner(

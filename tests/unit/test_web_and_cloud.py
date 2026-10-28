@@ -2,6 +2,7 @@
 Unit tests for Cloud LLM client and FastAPI web interface.
 """
 
+import json
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 import pytest
@@ -95,3 +96,61 @@ def test_web_settings_update():
     res = client.post("/api/settings", json={"provider": "cloud", "cloud_api_key": "dummy-key"})
     assert res.status_code == 200
     assert res.json()["status"] == "updated"
+
+
+def test_is_text_generation_model_filtering():
+    # Valid text models
+    assert CloudLLMClient.is_text_generation_model("gemini-2.0-flash") is True
+    assert CloudLLMClient.is_text_generation_model("models/gemini-2.5-pro") is True
+    assert CloudLLMClient.is_text_generation_model("gemini-1.5-flash-latest") is True
+
+    # Invalid non-text models
+    assert CloudLLMClient.is_text_generation_model("gemini-2.5-flash-preview-tts") is False
+    assert CloudLLMClient.is_text_generation_model("gemini-2.5-flash-tts") is False
+    assert CloudLLMClient.is_text_generation_model("text-embedding-004") is False
+    assert CloudLLMClient.is_text_generation_model("imagen-3.0-generate-002") is False
+    assert CloudLLMClient.is_text_generation_model("aqa") is False
+    assert CloudLLMClient.is_text_generation_model("") is False
+
+
+def test_get_available_gemini_models_filters_tts():
+    cloud = CloudLLMClient(api_key="AIzaMockKey")
+    mock_payload = {
+        "models": [
+            {"name": "models/gemini-2.5-flash-preview-tts", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-2.5-flash-tts", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-2.0-flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"]},
+            {"name": "models/gemini-1.5-flash", "supportedGenerationMethods": ["generateContent"]},
+        ]
+    }
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.read.return_value = json.dumps(mock_payload).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        models = cloud._get_available_gemini_models()
+        assert "gemini-2.0-flash" in models
+        assert "gemini-1.5-flash" in models
+        assert "gemini-2.5-flash-preview-tts" not in models
+        assert "gemini-2.5-flash-tts" not in models
+        assert "text-embedding-004" not in models
+
+
+def test_cloud_gemini_fallback_on_tts_modality_or_quota_error():
+    cloud = CloudLLMClient(api_key="AIzaMockKey", default_model="gemini-2.0-flash")
+    from codelens.llm.cloud_client import CloudClientError
+    
+    # Simulate first attempt throwing 400 modality error, second attempt succeeding
+    attempts = []
+    def mock_execute(model_name, body_bytes, timeout):
+        attempts.append(model_name)
+        if len(attempts) == 1:
+            raise CloudClientError("Gemini API error (400): response modalities (TEXT) is not supported")
+        return '{"result": "fallback_success"}'
+
+    with patch.object(cloud, "_execute_gemini_post", side_effect=mock_execute):
+        res = cloud._call_gemini_native(messages=[{"role": "user", "content": "hello"}])
+        assert "fallback_success" in res
+        assert len(attempts) >= 2

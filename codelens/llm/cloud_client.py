@@ -47,6 +47,7 @@ class CloudLLMClient:
         # Detect default endpoint based on detected key if base_url is not explicit
         if base_url:
             self.base_url = base_url.rstrip("/")
+            self.default_model = default_model
         elif self.api_key.startswith("gsk_") or os.getenv("GROQ_API_KEY"):
             self.base_url = "https://api.groq.com/openai/v1"
             self.default_model = default_model if default_model != "gemini-2.0-flash" else "llama-3.3-70b-versatile"
@@ -58,9 +59,35 @@ class CloudLLMClient:
             self.base_url = "https://generativelanguage.googleapis.com"
             self.default_model = default_model
 
-        self.default_model = default_model
         self.timeout = timeout
         self._cached_gemini_models: Optional[list[str]] = None
+
+    @staticmethod
+    def is_text_generation_model(model_name: str) -> bool:
+        """Filter out non-text models (TTS, audio, embedding, image, etc.)."""
+        if not model_name:
+            return False
+        name = model_name.lower().strip()
+        if name.startswith("models/"):
+            name = name[len("models/"):]
+        # Exclude non-conversational modalities and models
+        disallowed_keywords = (
+            "tts",
+            "audio",
+            "image",
+            "imagen",
+            "embedding",
+            "embed",
+            "aqa",
+            "realtime",
+            "live",
+            "robotics",
+            "computer-use",
+        )
+        for kw in disallowed_keywords:
+            if kw in name:
+                return False
+        return name.startswith("gemini")
 
     def is_gemini(self, model: Optional[str] = None) -> bool:
         """Determine whether to route request to native Gemini REST endpoint."""
@@ -80,7 +107,7 @@ class CloudLLMClient:
         return False
 
     def _get_available_gemini_models(self) -> list[str]:
-        """Fetch list of active Gemini models supporting generateContent from Google API."""
+        """Fetch list of active Gemini text chat models supporting generateContent from Google API."""
         if self._cached_gemini_models is not None:
             return self._cached_gemini_models
 
@@ -104,7 +131,8 @@ class CloudLLMClient:
                             m_name = m.get("name", "")
                             if m_name.startswith("models/"):
                                 m_name = m_name[len("models/"):]
-                            models.append(m_name)
+                            if self.is_text_generation_model(m_name):
+                                models.append(m_name)
         except Exception:
             pass
 
@@ -142,6 +170,8 @@ class CloudLLMClient:
     def verify_model(self, model_name: Optional[str] = None) -> ModelInfo:
         """Verify cloud model configuration."""
         target = model_name or self.default_model
+        if self.is_gemini(target) and not self.is_text_generation_model(target):
+            target = "gemini-2.0-flash"
         return ModelInfo(
             name=target,
             parameter_size="Cloud Hosted",
@@ -214,23 +244,32 @@ class CloudLLMClient:
         if clean_model.startswith("models/"):
             clean_model = clean_model[len("models/"):]
 
+        if not self.is_text_generation_model(clean_model):
+            clean_model = "gemini-2.0-flash"
+
         available = self._get_available_gemini_models()
-        if available:
-            models_to_try = []
-            if clean_model in available:
-                models_to_try.append(clean_model)
-            for preferred in ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash-002", "gemini-1.5-flash", "gemini-1.5-pro"):
-                if preferred in available and preferred not in models_to_try:
+        models_to_try: list[str] = [clean_model]
+
+        preferred_candidates = (
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-001",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash-001",
+            "gemini-1.5-flash-002",
+            "gemini-1.5-pro",
+        )
+        for preferred in preferred_candidates:
+            if preferred not in models_to_try:
+                if not available or preferred in available:
                     models_to_try.append(preferred)
+
+        if available:
             for m in available:
-                if m not in models_to_try:
+                if m not in models_to_try and self.is_text_generation_model(m):
                     models_to_try.append(m)
-        else:
-            # Fallback sequence
-            models_to_try = [clean_model]
-            for fallback in ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"):
-                if fallback not in models_to_try:
-                    models_to_try.append(fallback)
 
         system_parts: list[dict[str, str]] = []
         contents: list[dict[str, Any]] = []
@@ -278,8 +317,16 @@ class CloudLLMClient:
                 return self._execute_gemini_post(m_name, data_bytes, effective_timeout)
             except CloudClientError as err:
                 last_exc = err
-                if "404" in str(err):
-                    # Model not available in this generation tier, try next fallback
+                err_lower = str(err).lower()
+                # 404 (model not found), 400 (modality/unsupported response modality), 429 (model-specific quota exceeded)
+                # In all these cases, try the next text model candidate in models_to_try!
+                if (
+                    "404" in err_lower
+                    or "not supported" in err_lower
+                    or "modality" in err_lower
+                    or "429" in err_lower
+                    or "resource_exhausted" in err_lower
+                ):
                     continue
                 raise err
             except Exception as e:
