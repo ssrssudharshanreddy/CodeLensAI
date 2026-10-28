@@ -71,7 +71,7 @@ class CloudLLMClient:
             return False
         if "api.openai.com" in self.base_url:
             return False
-        if self.api_key.startswith("AIza"):
+        if self.api_key.startswith("AIza") or self.api_key.startswith("AQ."):
             return True
         if "generativelanguage.googleapis.com" in self.base_url:
             return True
