@@ -26,17 +26,34 @@ def test_cloud_llm_client_initialization():
     assert "generativelanguage" in cloud.base_url
 
 
-def test_cloud_llm_client_mock_chat():
-    cloud = CloudLLMClient(api_key="mock-key")
+def test_cloud_llm_client_mock_gemini_chat():
+    cloud = CloudLLMClient(api_key="AIzaSyMockKey", default_model="gemini-1.5-flash")
     with patch("urllib.request.urlopen") as mock_urlopen:
         mock_response = MagicMock()
         mock_response.read.return_value = (
-            b'{"choices": [{"message": {"content": "{\\"thought\\": \\"ok\\"}"}}]}'
+            b'{"candidates": [{"content": {"parts": [{"text": "{\\"thought\\": \\"gemini_ok\\"}"}]}}]}'
         )
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         res = cloud.chat(messages=[{"role": "user", "content": "hello"}])
-        assert '{"thought": "ok"}' in res
+        assert '{"thought": "gemini_ok"}' in res
+
+
+def test_cloud_llm_client_mock_openai_chat():
+    cloud = CloudLLMClient(
+        api_key="gsk-mock-key",
+        base_url="https://api.groq.com/openai/v1",
+        default_model="llama-3.3-70b-versatile",
+    )
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_response = MagicMock()
+        mock_response.read.return_value = (
+            b'{"choices": [{"message": {"content": "{\\"thought\\": \\"openai_ok\\"}"}}]}'
+        )
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        res = cloud.chat(messages=[{"role": "user", "content": "hello"}])
+        assert '{"thought": "openai_ok"}' in res
 
 
 def test_factory_switching():
