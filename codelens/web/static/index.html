@@ -330,7 +330,7 @@
 
             <div>
               <label class="block text-xs font-medium text-slate-300 mb-1">Cloud Model Name</label>
-              <input type="text" id="settingCloudModel" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200" value="gemini-1.5-flash" placeholder="gemini-1.5-flash or llama-3.3-70b-versatile">
+              <input type="text" id="settingCloudModel" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200" value="gemini-2.0-flash" placeholder="gemini-2.0-flash or llama-3.3-70b-versatile">
             </div>
 
             <button onclick="saveSettings()" class="w-full py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition">
@@ -430,7 +430,7 @@
       fetch('/api/settings', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ provider: 'cloud', cloud_api_key: savedKey, cloud_model: 'gemini-1.5-flash' })
+        body: JSON.stringify({ provider: 'cloud', cloud_api_key: savedKey, cloud_model: 'gemini-2.0-flash' })
       }).then(() => checkHealth());
     } else {
       checkHealth();

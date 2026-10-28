@@ -30,7 +30,7 @@ class CloudLLMClient:
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        default_model: str = "gemini-1.5-flash",
+        default_model: str = "gemini-2.0-flash",
         timeout: int = 90,
     ):
         # Auto-detect API key from common environment variables
@@ -49,10 +49,10 @@ class CloudLLMClient:
             self.base_url = base_url.rstrip("/")
         elif os.getenv("GROQ_API_KEY"):
             self.base_url = "https://api.groq.com/openai/v1"
-            self.default_model = default_model if default_model != "gemini-1.5-flash" else "llama-3.3-70b-versatile"
+            self.default_model = default_model if default_model != "gemini-2.0-flash" else "llama-3.3-70b-versatile"
         elif os.getenv("OPENROUTER_API_KEY"):
             self.base_url = "https://openrouter.ai/api/v1"
-            self.default_model = default_model if default_model != "gemini-1.5-flash" else "google/gemini-2.0-flash-exp:free"
+            self.default_model = default_model if default_model != "gemini-2.0-flash" else "google/gemini-2.0-flash-exp:free"
         else:
             # Default to Google Gemini API
             self.base_url = "https://generativelanguage.googleapis.com"
@@ -120,6 +120,56 @@ class CloudLLMClient:
             context_length=128000,
         )
 
+    def _execute_gemini_post(self, model_name: str, body_bytes: bytes, timeout: int) -> str:
+        """Post generateContent payload to Gemini endpoint, trying v1beta then v1."""
+        endpoints = [
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}",
+            f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={self.api_key}",
+        ]
+        last_error = None
+        for url in endpoints:
+            req = urllib.request.Request(
+                url,
+                data=body_bytes,
+                headers={
+                    "x-goog-api-key": self.api_key,
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    res_data = json.loads(response.read().decode("utf-8"))
+                    candidates = res_data.get("candidates", [])
+                    if not candidates:
+                        feedback = res_data.get("promptFeedback", {})
+                        block_reason = feedback.get("blockReason")
+                        if block_reason:
+                            raise CloudClientError(f"Gemini API blocked request: {block_reason}")
+                        raise CloudClientError("Gemini API returned no candidates.")
+
+                    candidate = candidates[0]
+                    content_obj = candidate.get("content", {})
+                    parts = content_obj.get("parts", [])
+                    if not parts:
+                        finish_reason = candidate.get("finishReason")
+                        raise CloudClientError(f"Gemini API returned empty response (finishReason: {finish_reason}).")
+
+                    return "".join(p.get("text", "") for p in parts)
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="replace")
+                last_error = CloudClientError(f"Gemini API error ({e.code}): {err_body}")
+                if e.code == 404:
+                    # Try next endpoint / version
+                    continue
+                raise last_error
+            except (urllib.error.URLError, TimeoutError) as e:
+                raise CloudClientError(f"Network error communicating with Gemini API: {e}")
+
+        if last_error:
+            raise last_error
+        raise CloudClientError(f"Failed to generate content with Gemini model '{model_name}'.")
+
     def _call_gemini_native(
         self,
         messages: list[dict[str, str]],
@@ -135,7 +185,11 @@ class CloudLLMClient:
         if clean_model.startswith("models/"):
             clean_model = clean_model[len("models/"):]
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={self.api_key}"
+        # If user/config still specified deprecated gemini-1.5-flash, ensure modern models are tried
+        models_to_try = [clean_model]
+        for fallback in ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"):
+            if fallback not in models_to_try:
+                models_to_try.append(fallback)
 
         system_parts: list[dict[str, str]] = []
         contents: list[dict[str, Any]] = []
@@ -175,48 +229,26 @@ class CloudLLMClient:
             body["generationConfig"]["responseMimeType"] = "application/json"
 
         data_bytes = json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=data_bytes,
-            headers={
-                "x-goog-api-key": self.api_key,
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-
         effective_timeout = timeout or self.timeout
-        try:
-            with urllib.request.urlopen(req, timeout=effective_timeout) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
-                candidates = res_data.get("candidates", [])
-                if not candidates:
-                    feedback = res_data.get("promptFeedback", {})
-                    block_reason = feedback.get("blockReason")
-                    if block_reason:
-                        raise CloudClientError(f"Gemini API blocked request: {block_reason}")
-                    raise CloudClientError("Gemini API returned no candidates.")
 
-                candidate = candidates[0]
-                content_obj = candidate.get("content", {})
-                parts = content_obj.get("parts", [])
-                if not parts:
-                    finish_reason = candidate.get("finishReason")
-                    raise CloudClientError(f"Gemini API returned empty response (finishReason: {finish_reason}).")
+        last_exc: Optional[Exception] = None
+        for m_name in models_to_try:
+            try:
+                return self._execute_gemini_post(m_name, data_bytes, effective_timeout)
+            except CloudClientError as err:
+                last_exc = err
+                if "404" in str(err):
+                    # Model not available in this generation tier, try next fallback
+                    continue
+                raise err
+            except Exception as e:
+                if isinstance(e, CloudClientError):
+                    raise
+                raise CloudClientError(f"Unexpected error calling Gemini API: {e}")
 
-                text = "".join(p.get("text", "") for p in parts)
-                return text
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            raise CloudClientError(f"Gemini API error ({e.code}): {err_body}")
-        except urllib.error.URLError as e:
-            raise CloudClientError(f"Network error communicating with Gemini API: {e}")
-        except TimeoutError:
-            raise CloudClientError(f"Gemini request timed out after {effective_timeout}s")
-        except Exception as e:
-            if isinstance(e, CloudClientError):
-                raise
-            raise CloudClientError(f"Unexpected error calling Gemini API: {e}")
+        if last_exc:
+            raise last_exc
+        raise CloudClientError("Failed to obtain response from Gemini API.")
 
     def _call_openai_compatible(
         self,

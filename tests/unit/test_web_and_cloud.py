@@ -27,7 +27,7 @@ def test_cloud_llm_client_initialization():
 
 
 def test_cloud_llm_client_mock_gemini_chat():
-    cloud = CloudLLMClient(api_key="AIzaSyMockKey", default_model="gemini-1.5-flash")
+    cloud = CloudLLMClient(api_key="AIzaSyMockKey", default_model="gemini-2.0-flash")
     with patch("urllib.request.urlopen") as mock_urlopen:
         mock_response = MagicMock()
         mock_response.read.return_value = (
