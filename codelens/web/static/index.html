@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeLens AI - Autonomous Engineering Agent</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Highlight.js for code and diff highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/diff.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfeff',
+              400: '#22d3ee',
+              500: '#06b6d4',
+              600: '#0891b2',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .glass-card { background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.6); }
+    .glow-cyan { box-shadow: 0 0 25px -5px rgba(6, 182, 212, 0.25); }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-40 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & Title -->
+      <div class="flex items-center space-x-3">
+        <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+          <i data-lucide="cpu" class="h-5 w-5 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-cyan-400 via-sky-300 to-indigo-300 bg-clip-text text-transparent">CodeLens AI</span>
+            <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/60">v0.1.0</span>
+          </div>
+          <p class="text-xs text-slate-400">Autonomous Coding & Debugging Agent</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="hidden md:flex space-x-1 p-1 bg-slate-950/60 rounded-xl border border-slate-800/80">
+        <button onclick="switchTab('agent')" id="tab-agent" class="px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 bg-slate-800 text-cyan-400 shadow-sm">
+          <i data-lucide="bot" class="h-4 w-4"></i>
+          <span>Autonomous Agent</span>
+        </button>
+        <button onclick="switchTab('learning')" id="tab-learning" class="px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 text-slate-400 hover:text-slate-200">
+          <i data-lucide="graduation-cap" class="h-4 w-4"></i>
+          <span>Student Lab</span>
+        </button>
+        <button onclick="switchTab('workspace')" id="tab-workspace" class="px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 text-slate-400 hover:text-slate-200">
+          <i data-lucide="folder-code" class="h-4 w-4"></i>
+          <span>Workspace</span>
+        </button>
+        <button onclick="switchTab('settings')" id="tab-settings" class="px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 text-slate-400 hover:text-slate-200">
+          <i data-lucide="sliders" class="h-4 w-4"></i>
+          <span>Settings & Deploy</span>
+        </button>
+      </nav>
+
+      <!-- Connection / Status Badge -->
+      <div class="flex items-center space-x-3">
+        <div id="statusBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs">
+          <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" id="statusDot"></span>
+          <span class="text-slate-300 font-mono" id="statusText">Checking status...</span>
+        </div>
+        <button onclick="openSettingsModal()" class="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-400 transition" title="Quick Settings">
+          <i data-lucide="settings" class="h-4 w-4"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+    <!-- TAB 1: AUTONOMOUS AGENT -->
+    <div id="view-agent" class="space-y-6">
+      
+      <!-- Top Grid: Task Dispatcher & Metrics -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left: Task Configuration Panel -->
+        <div class="lg:col-span-5 glass-card rounded-2xl p-6 glow-cyan space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h2 class="font-semibold text-slate-200 flex items-center space-x-2">
+              <i data-lucide="terminal" class="h-4 w-4 text-cyan-400"></i>
+              <span>Engineering Mission</span>
+            </h2>
+            <button onclick="triggerDemoRun()" class="text-xs px-2.5 py-1 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-800 hover:bg-indigo-900 transition flex items-center space-x-1">
+              <i data-lucide="play" class="h-3 w-3"></i>
+              <span>Auto Demo</span>
+            </button>
+          </div>
+
+          <!-- Task Textarea -->
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1.5">Task Description or Bug Report</label>
+            <textarea id="taskInput" rows="4" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition" placeholder="e.g. Inspect examples/off_by_one.py, write a test to reproduce the median calculation error, apply a patch, and verify with tests."></textarea>
+          </div>
+
+          <!-- Suggested Quick Missions -->
+          <div>
+            <span class="text-xs text-slate-500 block mb-1">Sample Missions:</span>
+            <div class="flex flex-wrap gap-1.5">
+              <button onclick="setSampleTask('examples/off_by_one.py', 'Fix off-by-one error in find_median() for odd lists and verify with tests.')" class="text-xs px-2 py-1 rounded bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800">Off-by-One Median</button>
+              <button onclick="setSampleTask('examples/zero_division.py', 'Fix ZeroDivisionError in calculate_average() when score list is empty.')" class="text-xs px-2 py-1 rounded bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800">Zero Division Error</button>
+              <button onclick="setSampleTask('examples/type_mismatch.py', 'Fix TypeError string/integer concatenation in generate_report().')" class="text-xs px-2 py-1 rounded bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800">Type Mismatch</button>
+            </div>
+          </div>
+
+          <!-- Target File & Iteration Limit -->
+          <div class="grid grid-cols-2 gap-3 pt-2">
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Target File (Optional)</label>
+              <input type="text" id="targetFileInput" class="w-full bg-slate-950/80 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200" placeholder="e.g. examples/off_by_one.py">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1">Max Iterations: <span id="maxIterLabel" class="text-cyan-400">8</span></label>
+              <input type="range" id="maxIterInput" min="2" max="15" value="8" oninput="document.getElementById('maxIterLabel').innerText = this.value" class="w-full accent-cyan-500 mt-2">
+            </div>
+          </div>
+
+          <!-- Guardrail Options -->
+          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+            <label class="flex items-center space-x-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" id="autoApproveToggle" class="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0">
+              <span>Auto-Approve Patches</span>
+            </label>
+            <span class="text-slate-500 text-[11px]">Subprocess Sandbox: <strong class="text-emerald-400">Active</strong></span>
+          </div>
+
+          <!-- Launch Button -->
+          <button id="launchBtn" onclick="launchAgentTask()" class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-cyan-500/20 transition flex items-center justify-center space-x-2">
+            <i data-lucide="play" class="h-4 w-4"></i>
+            <span>Launch Autonomous Agent</span>
+          </button>
+        </div>
+
+        <!-- Right: Real-time Live Execution Stream -->
+        <div class="lg:col-span-7 glass-card rounded-2xl p-6 flex flex-col h-[680px]">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="activity" class="h-4 w-4 text-emerald-400"></i>
+              <h2 class="font-semibold text-slate-200">Execution Timeline & Verified Evidence</h2>
+            </div>
+            <div id="agentStatusIndicator" class="text-xs px-2.5 py-1 rounded-full bg-slate-900 text-slate-400 border border-slate-800">
+              Agent Idle
+            </div>
+          </div>
+
+          <!-- Event Stream Container -->
+          <div id="eventsContainer" class="flex-1 overflow-y-auto space-y-4 py-4 pr-1">
+            <div class="text-center py-20 text-slate-500 space-y-3">
+              <div class="inline-flex p-3 rounded-full bg-slate-900/60 border border-slate-800 text-slate-600">
+                <i data-lucide="compass" class="h-6 w-6"></i>
+              </div>
+              <p class="text-sm">No mission running. Enter a task or click <strong class="text-cyan-400">Auto Demo</strong> to begin.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- TAB 2: STUDENT LEARNING LAB -->
+    <div id="view-learning" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-6">
+        <div class="max-w-3xl">
+          <h2 class="text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-300 bg-clip-text text-transparent">Student Debugging Lab</h2>
+          <p class="text-sm text-slate-400 mt-1">
+            Master the art of debugging with three-stage progressive scaffolding. Discover conceptual invariants, receive targeted next steps, and inspect verified solutions only when you decide.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mt-6">
+          <!-- Left: Code & Problem Input -->
+          <div class="md:col-span-6 space-y-4">
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-xs font-medium text-slate-400">Problem / Failure Description</label>
+                <div class="flex space-x-1">
+                  <button onclick="loadLabExample('off_by_one')" class="text-[11px] text-cyan-400 hover:underline">Off-By-One</button>
+                  <span class="text-slate-600">|</span>
+                  <button onclick="loadLabExample('zero_division')" class="text-[11px] text-cyan-400 hover:underline">Zero Div</button>
+                </div>
+              </div>
+              <input type="text" id="labProblem" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200" value="find_median() returns wrong results for odd-length lists">
+            </div>
+
+            <div>
+              <label class="text-xs font-medium text-slate-400 block mb-1">Source Code Under Test</label>
+              <textarea id="labCode" rows="14" class="w-full font-mono text-xs bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 leading-relaxed"></textarea>
+            </div>
+          </div>
+
+          <!-- Right: Progressive 3-Stage Cards -->
+          <div class="md:col-span-6 space-y-4">
+            
+            <!-- Stage 1: Hint -->
+            <div class="p-4 rounded-xl border border-yellow-900/40 bg-yellow-950/10 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-yellow-400 flex items-center space-x-1.5">
+                  <i data-lucide="lightbulb" class="h-4 w-4"></i>
+                  <span>Stage 1: Conceptual Clue</span>
+                </span>
+                <button id="btnHint" onclick="fetchLearningStage('hint')" class="text-xs px-3 py-1 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition">
+                  Reveal Hint
+                </button>
+              </div>
+              <p id="hintContent" class="text-xs text-slate-400 italic">Click "Reveal Hint" to get a high-level conceptual clue without spoiling the code fix.</p>
+            </div>
+
+            <!-- Stage 2: Guidance -->
+            <div class="p-4 rounded-xl border border-indigo-900/40 bg-indigo-950/10 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-indigo-400 flex items-center space-x-1.5">
+                  <i data-lucide="compass" class="h-4 w-4"></i>
+                  <span>Stage 2: Targeted Guidance</span>
+                </span>
+                <button id="btnGuidance" onclick="fetchLearningStage('guidance')" class="text-xs px-3 py-1 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/30 transition" disabled>
+                  Reveal Guidance
+                </button>
+              </div>
+              <p id="guidanceContent" class="text-xs text-slate-400 italic">Review the hint first, then reveal guidance pointing to the specific loop/condition.</p>
+            </div>
+
+            <!-- Stage 3: Solution -->
+            <div class="p-4 rounded-xl border border-emerald-900/40 bg-emerald-950/10 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-emerald-400 flex items-center space-x-1.5">
+                  <i data-lucide="check-circle" class="h-4 w-4"></i>
+                  <span>Stage 3: Full Solution & Patch</span>
+                </span>
+                <button id="btnSolution" onclick="fetchLearningStage('solution')" class="text-xs px-3 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition">
+                  Reveal Solution
+                </button>
+              </div>
+              <div id="solutionContent" class="text-xs text-slate-400 italic">
+                Ready to verify your hypothesis? Click to view the root-cause diagnosis and code fix.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: WORKSPACE FILE EXPLORER -->
+    <div id="view-workspace" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-6">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="font-semibold text-slate-200 flex items-center space-x-2">
+            <i data-lucide="folder-tree" class="h-4 w-4 text-cyan-400"></i>
+            <span>Workspace Source Tree</span>
+          </h2>
+          <button onclick="loadWorkspaceFiles()" class="text-xs text-cyan-400 hover:underline flex items-center space-x-1">
+            <i data-lucide="refresh-cw" class="h-3 w-3"></i>
+            <span>Refresh</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mt-4">
+          <!-- File List -->
+          <div class="md:col-span-4 bg-slate-950/60 rounded-xl p-3 border border-slate-800 max-h-[500px] overflow-y-auto">
+            <ul id="workspaceFileList" class="space-y-1 text-xs font-mono text-slate-300">
+              <li class="text-slate-500 italic p-2">Loading files...</li>
+            </ul>
+          </div>
+          <!-- File Content Viewer -->
+          <div class="md:col-span-8 bg-slate-950/80 rounded-xl p-4 border border-slate-800 max-h-[500px] overflow-y-auto">
+            <div id="fileViewerHeader" class="text-xs font-mono text-cyan-400 border-b border-slate-800 pb-2 mb-2">Select a file from the list</div>
+            <pre><code id="fileViewerCode" class="language-python text-xs"></code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: SETTINGS & CLOUD DEPLOY -->
+    <div id="view-settings" class="hidden space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- LLM Backend Switcher -->
+        <div class="glass-card rounded-2xl p-6 space-y-4">
+          <h3 class="font-bold text-slate-200 flex items-center space-x-2">
+            <i data-lucide="server" class="h-5 w-5 text-cyan-400"></i>
+            <span>AI Model Provider</span>
+          </h3>
+          <p class="text-xs text-slate-400">
+            CodeLens AI runs on local Ollama by default. When publishing to Render, Hugging Face, or Cloud Run, switch to a hosted Cloud API (Gemini or Groq) with an API key.
+          </p>
+
+          <div class="space-y-3 pt-2">
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Provider Mode</label>
+              <select id="settingProvider" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200">
+                <option value="auto">Auto-Detect (Local Ollama first, Cloud fallback)</option>
+                <option value="ollama">Local Ollama (gemma4:e2b)</option>
+                <option value="cloud">Cloud API (Gemini / Groq / OpenRouter)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Cloud API Key (Gemini or Groq)</label>
+              <input type="password" id="settingCloudKey" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200" placeholder="AIzaSy... or gsk_...">
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Cloud Model Name</label>
+              <input type="text" id="settingCloudModel" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200" value="gemini-2.5-flash" placeholder="gemini-2.5-flash or llama-3.3-70b-versatile">
+            </div>
+
+            <button onclick="saveSettings()" class="w-full py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition">
+              Save Settings
+            </button>
+          </div>
+        </div>
+
+        <!-- Publishing & Deployment Guide -->
+        <div class="glass-card rounded-2xl p-6 space-y-4">
+          <h3 class="font-bold text-slate-200 flex items-center space-x-2">
+            <i data-lucide="cloud" class="h-5 w-5 text-indigo-400"></i>
+            <span>Publishing to the Web</span>
+          </h3>
+          <p class="text-xs text-slate-400">
+            Deploy this application to free cloud hosts in 2 minutes:
+          </p>
+
+          <div class="space-y-3 text-xs">
+            <div class="p-3 rounded-lg bg-slate-950 border border-slate-800">
+              <strong class="text-cyan-400 block mb-1">Option 1: Render.com (Free Web Service)</strong>
+              <p class="text-slate-400">1. Push this folder to GitHub.<br>2. In Render, select <em>New Web Service</em>.<br>3. Build Command: <code class="text-slate-200">pip install -r requirements.txt</code><br>4. Start Command: <code class="text-slate-200">uvicorn codelens.web.app:app --host 0.0.0.0 --port $PORT</code><br>5. Add environment variable: <code class="text-slate-200">GEMINI_API_KEY</code></p>
+            </div>
+
+            <div class="p-3 rounded-lg bg-slate-950 border border-slate-800">
+              <strong class="text-indigo-400 block mb-1">Option 2: Docker / Hugging Face Spaces</strong>
+              <p class="text-slate-400">Build and run anywhere with the included Dockerfile:<br><code class="text-slate-200">docker build -t codelens-ai . && docker run -p 8000:8000 codelens-ai</code></p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Interactive Approval Modal -->
+  <div id="approvalModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="glass-card max-w-2xl w-full rounded-2xl p-6 border-amber-500/50 shadow-2xl space-y-4">
+      <div class="flex items-center space-x-3 text-amber-400">
+        <i data-lucide="shield-alert" class="h-6 w-6"></i>
+        <h3 class="font-bold text-lg text-slate-100">User Approval Required</h3>
+      </div>
+      <p class="text-xs text-slate-300" id="approvalActionText">The agent requests permission to apply a patch to your source file.</p>
+      
+      <!-- Unified Diff Preview Box -->
+      <div class="max-h-60 overflow-y-auto rounded-lg bg-slate-950 border border-slate-800 p-3">
+        <pre><code id="approvalDiffText" class="language-diff text-xs font-mono"></code></pre>
+      </div>
+
+      <div class="flex items-center justify-end space-x-3 pt-2">
+        <button onclick="submitApprovalDecision(false)" class="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold transition">
+          Reject Patch
+        </button>
+        <button onclick="submitApprovalDecision(true)" class="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-400 hover:to-teal-500 text-xs font-semibold shadow-lg shadow-emerald-500/20 transition">
+          Approve & Apply
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Application Logic -->
+  <script>
+    let currentRunId = null;
+    let eventSource = null;
+    let pendingRunIdForApproval = null;
+    let currentHint = "";
+
+    // Initialize Lucide icons
+    lucide.createIcons();
+
+    // Check backend health on load
+    async function checkHealth() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        const badge = document.getElementById('statusText');
+        const dot = document.getElementById('statusDot');
+
+        if (data.is_connected) {
+          const modelName = data.model_details?.name || 'Local Gemma 4';
+          badge.innerText = `${data.provider.toUpperCase()}: ${modelName}`;
+          dot.className = "h-2 w-2 rounded-full bg-emerald-400 animate-pulse";
+        } else {
+          badge.innerText = `${data.provider.toUpperCase()} (Offline)`;
+          dot.className = "h-2 w-2 rounded-full bg-amber-400";
+        }
+      } catch (err) {
+        document.getElementById('statusText').innerText = "Server Unreachable";
+        document.getElementById('statusDot').className = "h-2 w-2 rounded-full bg-rose-500";
+      }
+    }
+    checkHealth();
+    setInterval(checkHealth, 15000);
+
+    // Tab Switching
+    function switchTab(tab) {
+      ['agent', 'learning', 'workspace', 'settings'].forEach(t => {
+        document.getElementById(`view-${t}`).classList.add('hidden');
+        const btn = document.getElementById(`tab-${t}`);
+        btn.className = "px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 text-slate-400 hover:text-slate-200";
+      });
+      document.getElementById(`view-${tab}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`tab-${tab}`);
+      activeBtn.className = "px-4 py-2 rounded-lg text-sm font-medium transition flex items-center space-x-2 bg-slate-800 text-cyan-400 shadow-sm";
+      lucide.createIcons();
+      if (tab === 'workspace') loadWorkspaceFiles();
+    }
+
+    // Set sample task in input
+    function setSampleTask(target, desc) {
+      document.getElementById('targetFileInput').value = target;
+      document.getElementById('taskInput').value = desc;
+    }
+
+    // Launch Agent Task
+    async function launchAgentTask() {
+      const task = document.getElementById('taskInput').value.trim();
+      if (!task) {
+        alert("Please enter a task description.");
+        return;
+      }
+      const targetFile = document.getElementById('targetFileInput').value.trim() || null;
+      const maxIter = parseInt(document.getElementById('maxIterInput').value, 10);
+      const autoApprove = document.getElementById('autoApproveToggle').checked;
+
+      const launchBtn = document.getElementById('launchBtn');
+      launchBtn.disabled = true;
+      launchBtn.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i><span>Agent Active...</span>`;
+      lucide.createIcons();
+
+      document.getElementById('eventsContainer').innerHTML = "";
+      document.getElementById('agentStatusIndicator').innerText = "Agent Running...";
+      document.getElementById('agentStatusIndicator').className = "text-xs px-2.5 py-1 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 animate-pulse";
+
+      try {
+        const res = await fetch('/api/run', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            task: task,
+            target_file: targetFile,
+            max_iterations: maxIter,
+            auto_approve: autoApprove,
+          })
+        });
+        const data = await res.json();
+        currentRunId = data.run_id;
+        connectEventStream(currentRunId);
+      } catch (err) {
+        alert("Failed to start run: " + err);
+        resetLaunchButton();
+      }
+    }
+
+    function resetLaunchButton() {
+      const launchBtn = document.getElementById('launchBtn');
+      launchBtn.disabled = false;
+      launchBtn.innerHTML = `<i data-lucide="play" class="h-4 w-4"></i><span>Launch Autonomous Agent</span>`;
+      lucide.createIcons();
+    }
+
+    // Connect to SSE stream
+    function connectEventStream(runId) {
+      if (eventSource) eventSource.close();
+      eventSource = new EventSource(`/api/stream/${runId}`);
+
+      eventSource.onmessage = (e) => {
+        if (!e.data) return;
+        const event = JSON.parse(e.data);
+        renderEvent(event);
+      };
+
+      eventSource.onerror = (err) => {
+        console.log("Stream disconnected", err);
+        eventSource.close();
+        resetLaunchButton();
+      };
+    }
+
+    // Render Event into Timeline
+    function renderEvent(event) {
+      const container = document.getElementById('eventsContainer');
+
+      if (event.type === 'thought') {
+        const card = document.createElement('div');
+        card.className = "p-4 rounded-xl border border-sky-900/50 bg-sky-950/20 space-y-2";
+        card.innerHTML = `
+          <div class="flex items-center justify-between text-xs font-semibold text-sky-400">
+            <span class="flex items-center space-x-1.5"><i data-lucide="brain" class="h-3.5 w-3.5"></i><span>Step ${event.iteration} / ${event.max_iter}: Agent Reasoning</span></span>
+            ${event.plan ? `<span class="italic text-slate-400 font-normal">Plan: ${escapeHtml(event.plan)}</span>` : ''}
+          </div>
+          <p class="text-xs text-slate-200 leading-relaxed">${escapeHtml(event.thought)}</p>
+        `;
+        container.appendChild(card);
+      } else if (event.type === 'tool_call') {
+        const card = document.createElement('div');
+        card.className = "p-3 rounded-lg border border-yellow-800/40 bg-yellow-950/15 text-xs space-y-1.5";
+        card.innerHTML = `
+          <div class="font-bold text-yellow-400 flex items-center space-x-1.5">
+            <i data-lucide="wrench" class="h-3.5 w-3.5"></i>
+            <span>Tool Invocation: <code>${event.tool_name}</code></span>
+          </div>
+          <pre class="bg-slate-950 p-2 rounded text-[11px] text-slate-300 font-mono overflow-x-auto">${escapeHtml(JSON.stringify(event.args, null, 2))}</pre>
+        `;
+        container.appendChild(card);
+      } else if (event.type === 'observation') {
+        const card = document.createElement('div');
+        const isSuccess = event.success;
+        const isAssump = event.is_assumption;
+        card.className = `p-3.5 rounded-lg border text-xs space-y-1.5 ${isSuccess ? 'border-emerald-800/40 bg-emerald-950/20' : 'border-rose-800/40 bg-rose-950/20'}`;
+        card.innerHTML = `
+          <div class="flex items-center justify-between font-semibold ${isSuccess ? 'text-emerald-400' : 'text-rose-400'}">
+            <span class="flex items-center space-x-1.5">
+              <i data-lucide="${isSuccess ? 'check-circle' : 'alert-circle'}" class="h-3.5 w-3.5"></i>
+              <span>${isAssump ? '[MODEL ASSUMPTION]' : '[VERIFIED TOOL OBSERVATION]'} - ${event.tool_name}</span>
+            </span>
+            <span class="text-[11px] uppercase">${isSuccess ? 'Success' : 'Failure'}</span>
+          </div>
+          <pre class="bg-slate-950 p-2.5 rounded text-[11px] text-slate-300 font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">${escapeHtml(event.output)}</pre>
+        `;
+        container.appendChild(card);
+      } else if (event.type === 'diff') {
+        const card = document.createElement('div');
+        card.className = "p-3.5 rounded-lg border border-purple-800/40 bg-purple-950/20 text-xs space-y-2";
+        card.innerHTML = `
+          <div class="font-bold text-purple-400 flex items-center space-x-1.5">
+            <i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>
+            <span>Proposed Patch: ${event.filename}</span>
+          </div>
+          <pre class="bg-slate-950 p-2.5 rounded text-[11px] font-mono overflow-x-auto"><code class="language-diff">${escapeHtml(event.diff)}</code></pre>
+        `;
+        container.appendChild(card);
+        hljs.highlightAll();
+      } else if (event.type === 'approval_required') {
+        pendingRunIdForApproval = event.run_id;
+        document.getElementById('approvalActionText').innerText = event.action;
+        document.getElementById('approvalDiffText').innerText = event.details;
+        document.getElementById('approvalModal').classList.remove('hidden');
+        hljs.highlightAll();
+      } else if (event.type === 'solution') {
+        const card = document.createElement('div');
+        card.className = "p-5 rounded-xl border border-emerald-500/60 bg-gradient-to-br from-emerald-950/30 to-slate-900 text-xs space-y-3 shadow-xl";
+        card.innerHTML = `
+          <div class="font-bold text-sm text-emerald-400 flex items-center space-x-2 border-b border-emerald-800/40 pb-2">
+            <i data-lucide="award" class="h-5 w-5"></i>
+            <span>Task Resolution Summary</span>
+          </div>
+          <div class="space-y-2">
+            <div><strong class="text-cyan-400">Root Cause:</strong> <span class="text-slate-200">${escapeHtml(event.root_cause)}</span></div>
+            <div><strong class="text-cyan-400">Correction:</strong> <span class="text-slate-200">${escapeHtml(event.explanation)}</span></div>
+            <div><strong class="text-cyan-400">Verified Test Evidence:</strong> <span class="text-slate-200">${escapeHtml(event.test_summary)}</span></div>
+            <div><strong class="text-cyan-400">Remaining Uncertainty:</strong> <span class="text-slate-200">${escapeHtml(event.uncertainty)}</span></div>
+          </div>
+        `;
+        container.appendChild(card);
+      } else if (event.type === 'done') {
+        document.getElementById('agentStatusIndicator').innerText = `Completed (${event.status})`;
+        document.getElementById('agentStatusIndicator').className = `text-xs px-2.5 py-1 rounded-full ${event.status === 'SOLVED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-900 text-slate-400'}`;
+        resetLaunchButton();
+      }
+
+      container.scrollTop = container.scrollHeight;
+      lucide.createIcons();
+    }
+
+    // Submit Approval decision
+    async function submitApprovalDecision(approved) {
+      if (!pendingRunIdForApproval) return;
+      document.getElementById('approvalModal').classList.add('hidden');
+      try {
+        await fetch('/api/approve', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({run_id: pendingRunIdForApproval, approved: approved})
+        });
+      } catch (err) {
+        alert("Error submitting approval: " + err);
+      }
+      pendingRunIdForApproval = null;
+    }
+
+    // Auto Demo trigger
+    async function triggerDemoRun() {
+      setSampleTask('examples/off_by_one.py', 'Fix off-by-one error in find_median() for odd lists and verify with tests.');
+      launchAgentTask();
+    }
+
+    // Student Lab Logic
+    const LAB_EXAMPLES = {
+      off_by_one: {
+        problem: "find_median() returns wrong results for odd-length lists.",
+        code: `def find_median(sorted_numbers):\n    n = len(sorted_numbers)\n    if n == 0:\n        raise ValueError("List cannot be empty")\n    mid = n // 2\n    if n % 2 == 1:\n        return sorted_numbers[mid + 1]  # Bug is here\n    else:\n        return (sorted_numbers[mid - 1] + sorted_numbers[mid]) / 2.0`
+      },
+      zero_division: {
+        problem: "calculate_average() crashes with ZeroDivisionError when scores is empty.",
+        code: `def calculate_average(scores):\n    total = sum(scores)\n    # Bug: crashes when scores is empty list\n    return total / len(scores)`
+      }
+    };
+
+    function loadLabExample(name) {
+      const ex = LAB_EXAMPLES[name];
+      if (ex) {
+        document.getElementById('labProblem').value = ex.problem;
+        document.getElementById('labCode').value = ex.code;
+        document.getElementById('hintContent').innerText = 'Click "Reveal Hint" to get a conceptual clue.';
+        document.getElementById('guidanceContent').innerText = 'Review the hint first, then reveal guidance.';
+        document.getElementById('solutionContent').innerText = 'Click to reveal the full solution.';
+        document.getElementById('btnGuidance').disabled = true;
+      }
+    }
+    loadLabExample('off_by_one');
+
+    async function fetchLearningStage(stage) {
+      const code = document.getElementById('labCode').value;
+      const problem = document.getElementById('labProblem').value;
+
+      const targetEl = document.getElementById(`${stage}Content`);
+      targetEl.innerText = "Generating educational insights with model...";
+
+      try {
+        const res = await fetch('/api/learn', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            code: code,
+            problem: problem,
+            stage: stage,
+            prior_hint: currentHint,
+          })
+        });
+        const data = await res.json();
+        targetEl.innerText = data.content;
+        if (stage === 'hint') {
+          currentHint = data.content;
+          document.getElementById('btnGuidance').disabled = false;
+        }
+      } catch (err) {
+        targetEl.innerText = "Error: " + err;
+      }
+    }
+
+    // Workspace File Browser
+    async function loadWorkspaceFiles() {
+      const listEl = document.getElementById('workspaceFileList');
+      listEl.innerHTML = "<li class='text-slate-500 italic p-2'>Loading workspace...</li>";
+      try {
+        const res = await fetch('/api/files');
+        const data = await res.json();
+        listEl.innerHTML = "";
+        data.files.forEach(f => {
+          const li = document.createElement('li');
+          const cleanName = f.split(' ')[0];
+          li.className = "p-2 rounded hover:bg-slate-900 cursor-pointer transition flex items-center justify-between";
+          li.innerHTML = `<span>${cleanName}</span><span class="text-[10px] text-slate-500">${f.split(' ')[1] || ''}</span>`;
+          li.onclick = () => viewWorkspaceFile(cleanName);
+          listEl.appendChild(li);
+        });
+      } catch (err) {
+        listEl.innerHTML = "<li class='text-rose-400 p-2'>Failed to list files.</li>";
+      }
+    }
+
+    async function viewWorkspaceFile(path) {
+      document.getElementById('fileViewerHeader').innerText = path;
+      const codeEl = document.getElementById('fileViewerCode');
+      codeEl.innerText = "Loading content...";
+      try {
+        const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+        const data = await res.json();
+        codeEl.innerText = data.content;
+        hljs.highlightElement(codeEl);
+      } catch (err) {
+        codeEl.innerText = "Error loading file: " + err;
+      }
+    }
+
+    // Save Settings
+    async function saveSettings() {
+      const provider = document.getElementById('settingProvider').value;
+      const key = document.getElementById('settingCloudKey').value.trim() || null;
+      const model = document.getElementById('settingCloudModel').value.trim() || null;
+
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            provider: provider,
+            cloud_api_key: key,
+            cloud_model: model,
+          })
+        });
+        alert("Settings updated successfully!");
+        checkHealth();
+      } catch (err) {
+        alert("Error saving settings: " + err);
+      }
+    }
+
+    function openSettingsModal() {
+      switchTab('settings');
+    }
+
+    function escapeHtml(text) {
+      if (!text) return "";
+      const div = document.createElement('div');
+      div.innerText = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Render.com Blueprint for CodeLens AI
+services:
+  - type: web
+    name: codelens-ai
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn codelens.web.app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: CODELENS_PROVIDER
+        value: cloud
+      - key: CODELENS_CLOUD_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
+        sync: false # Set securely in Render dashboard

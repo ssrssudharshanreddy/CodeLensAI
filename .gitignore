@@ -1,0 +1,24 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python caches and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.bak
+
+# Testing artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs and system files
+*.log
+Thumbs.db
+.DS_Store
+
+# Secrets and credentials
+.env
