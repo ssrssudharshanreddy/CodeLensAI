@@ -330,7 +330,7 @@
 
             <div>
               <label class="block text-xs font-medium text-slate-300 mb-1">Cloud Model Name</label>
-              <input type="text" id="settingCloudModel" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200" value="gemini-2.5-flash" placeholder="gemini-2.5-flash or llama-3.3-70b-versatile">
+              <input type="text" id="settingCloudModel" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200" value="gemini-1.5-flash" placeholder="gemini-1.5-flash or llama-3.3-70b-versatile">
             </div>
 
             <button onclick="saveSettings()" class="w-full py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition">
@@ -415,7 +415,7 @@
           badge.innerText = `${data.provider.toUpperCase()}: ${modelName}`;
           dot.className = "h-2 w-2 rounded-full bg-emerald-400 animate-pulse";
         } else {
-          badge.innerText = `${data.provider.toUpperCase()} (Offline)`;
+          badge.innerText = `${data.provider.toUpperCase()} (API Key Required)`;
           dot.className = "h-2 w-2 rounded-full bg-amber-400";
         }
       } catch (err) {
@@ -423,7 +423,18 @@
         document.getElementById('statusDot').className = "h-2 w-2 rounded-full bg-rose-500";
       }
     }
-    checkHealth();
+    // Auto-restore saved key on page load
+    const savedKey = localStorage.getItem('codelens_cloud_key');
+    if (savedKey) {
+      document.getElementById('settingCloudKey').value = savedKey;
+      fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ provider: 'cloud', cloud_api_key: savedKey, cloud_model: 'gemini-1.5-flash' })
+      }).then(() => checkHealth());
+    } else {
+      checkHealth();
+    }
     setInterval(checkHealth, 15000);
 
     // Tab Switching
@@ -587,6 +598,26 @@
           </div>
         `;
         container.appendChild(card);
+      } else if (event.type === 'error') {
+        const card = document.createElement('div');
+        const isApiKeyError = event.message && (event.message.includes("API key") || event.message.includes("api_key") || event.message.includes("401") || event.message.includes("403") || event.message.includes("Authentication Failed"));
+        card.className = "p-4 rounded-xl border border-rose-500/60 bg-rose-950/30 text-xs space-y-2.5 shadow-lg shadow-rose-950/20";
+        card.innerHTML = `
+          <div class="flex items-center space-x-2 text-rose-400 font-bold">
+            <i data-lucide="alert-triangle" class="h-4 w-4"></i>
+            <span>Agent Execution Error</span>
+          </div>
+          <p class="text-rose-200 leading-relaxed">${escapeHtml(event.message)}</p>
+          ${isApiKeyError ? `
+            <div class="pt-2">
+              <button onclick="switchTab('settings')" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition flex items-center space-x-1.5 shadow">
+                <i data-lucide="key" class="h-3.5 w-3.5"></i>
+                <span>Open Settings & Enter Gemini API Key</span>
+              </button>
+            </div>
+          ` : ''}
+        `;
+        container.appendChild(card);
       } else if (event.type === 'done') {
         document.getElementById('agentStatusIndicator').innerText = `Completed (${event.status})`;
         document.getElementById('agentStatusIndicator').className = `text-xs px-2.5 py-1 rounded-full ${event.status === 'SOLVED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-900 text-slate-400'}`;
@@ -662,6 +693,12 @@
             prior_hint: currentHint,
           })
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.detail || `Server error (${res.status})`;
+          targetEl.innerHTML = `<div class="p-2.5 rounded bg-rose-950/40 border border-rose-800 text-rose-300 space-y-1"><p class="font-semibold">Generation Failed: ${escapeHtml(errMsg)}</p><button onclick="switchTab('settings')" class="mt-1 text-xs px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-medium transition inline-block">Open Settings & Enter Gemini API Key</button></div>`;
+          return;
+        }
         const data = await res.json();
         targetEl.innerText = data.content;
         if (stage === 'hint') {
@@ -714,6 +751,12 @@
       const key = document.getElementById('settingCloudKey').value.trim() || null;
       const model = document.getElementById('settingCloudModel').value.trim() || null;
 
+      if (key) {
+        localStorage.setItem('codelens_cloud_key', key);
+      } else {
+        localStorage.removeItem('codelens_cloud_key');
+      }
+
       try {
         await fetch('/api/settings', {
           method: 'POST',
@@ -724,7 +767,7 @@
             cloud_model: model,
           })
         });
-        alert("Settings updated successfully!");
+        alert("Settings saved! Your model backend is now connected.");
         checkHealth();
       } catch (err) {
         alert("Error saving settings: " + err);

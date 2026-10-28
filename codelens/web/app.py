@@ -335,7 +335,7 @@ async def learn_stage(req: LearnRequest):
 
         return {"stage": req.stage, "content": text.strip()}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Learning generation failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/demo")

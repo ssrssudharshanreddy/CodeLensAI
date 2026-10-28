@@ -57,7 +57,7 @@ class CodeLensConfig(BaseModel):
         default_factory=lambda: os.getenv("CODELENS_CLOUD_BASE_URL", None)
     )
     cloud_model: str = Field(
-        default_factory=lambda: os.getenv("CODELENS_CLOUD_MODEL", "gemini-2.5-flash")
+        default_factory=lambda: os.getenv("CODELENS_CLOUD_MODEL", "gemini-1.5-flash")
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

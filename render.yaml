@@ -11,6 +11,6 @@ services:
       - key: CODELENS_PROVIDER
         value: cloud
       - key: CODELENS_CLOUD_MODEL
-        value: gemini-2.5-flash
+        value: gemini-1.5-flash
       - key: GEMINI_API_KEY
         sync: false # Set securely in Render dashboard

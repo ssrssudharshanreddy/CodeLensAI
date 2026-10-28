@@ -30,28 +30,29 @@ class CloudLLMClient:
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        default_model: str = "gemini-2.5-flash",
+        default_model: str = "gemini-1.5-flash",
         timeout: int = 90,
     ):
         # Auto-detect API key from common environment variables
         self.api_key = (
             api_key
+            or os.getenv("CODELENS_CLOUD_API_KEY")
             or os.getenv("GEMINI_API_KEY")
             or os.getenv("GROQ_API_KEY")
             or os.getenv("OPENROUTER_API_KEY")
             or os.getenv("OPENAI_API_KEY")
             or ""
-        )
+        ).strip()
 
         # Detect default endpoint based on detected key if base_url is not explicit
         if base_url:
             self.base_url = base_url.rstrip("/")
         elif os.getenv("GROQ_API_KEY"):
             self.base_url = "https://api.groq.com/openai/v1"
-            self.default_model = default_model if default_model != "gemini-2.5-flash" else "llama-3.3-70b-versatile"
+            self.default_model = default_model if default_model != "gemini-1.5-flash" else "llama-3.3-70b-versatile"
         elif os.getenv("OPENROUTER_API_KEY"):
             self.base_url = "https://openrouter.ai/api/v1"
-            self.default_model = default_model if default_model != "gemini-2.5-flash" else "google/gemini-2.0-flash-exp:free"
+            self.default_model = default_model if default_model != "gemini-1.5-flash" else "google/gemini-2.0-flash-exp:free"
         else:
             # Default to Google Gemini API (OpenAI compatibility endpoint)
             self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -61,30 +62,30 @@ class CloudLLMClient:
         self.timeout = timeout
 
     def check_connection(self) -> bool:
-        """Verify API key and connectivity to cloud endpoint."""
+        """Verify API key presence and connectivity to cloud endpoint."""
         if not self.api_key:
-            raise CloudClientError(
-                "No Cloud API key configured. Please set GEMINI_API_KEY, GROQ_API_KEY, "
-                "or configure it in the web settings modal."
-            )
+            return False
+
         try:
+            url = f"{self.base_url}/models"
+            if "generativelanguage" in self.base_url:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
+
             req = urllib.request.Request(
-                f"{self.base_url}/models",
+                url,
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
                 },
                 method="GET",
             )
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=8) as response:
                 return response.status == 200
         except urllib.error.HTTPError as e:
-            if e.code in (401, 403):
-                raise CloudClientError(f"Cloud API Authentication Failed (HTTP {e.code}): Check your API key.")
-            # Some providers like Gemini restrict /models endpoint; attempt a dry completion
+            if e.code in (400, 401, 403):
+                return False
             return True
         except Exception:
-            # If /models fails on Gemini endpoint, return True to allow chat attempts
             return bool(self.api_key)
 
     def verify_model(self, model_name: Optional[str] = None) -> ModelInfo:
