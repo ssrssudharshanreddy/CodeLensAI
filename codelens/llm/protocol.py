@@ -87,6 +87,49 @@ Special 'finish' tool arguments when done:
         return cleaned
 
     @classmethod
+    def normalize_tool_arguments(cls, tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+        """Normalize common parameter name variations from different LLMs."""
+        normalized = dict(args)
+
+        # Path / File aliases
+        if tool_name in ("inspect_file", "check_syntax"):
+            if "path" not in normalized:
+                for alias in ("file_path", "filepath", "file", "filename", "target_file"):
+                    if alias in normalized:
+                        normalized["path"] = str(normalized[alias])
+                        break
+
+        elif tool_name in ("create_patch", "apply_patch", "rollback_patch", "generate_tests"):
+            if "target_file" not in normalized:
+                for alias in ("path", "file_path", "filepath", "file", "filename"):
+                    if alias in normalized:
+                        normalized["target_file"] = str(normalized[alias])
+                        break
+
+        elif tool_name == "run_code_sandbox":
+            if "target_script" not in normalized and "code" not in normalized:
+                for alias in ("script", "path", "file_path", "filepath", "file", "target_file"):
+                    if alias in normalized:
+                        normalized["target_script"] = str(normalized[alias])
+                        break
+
+        elif tool_name == "run_tests":
+            if "test_target" not in normalized:
+                for alias in ("test_file", "test_script", "path", "file_path", "target", "file"):
+                    if alias in normalized:
+                        normalized["test_target"] = str(normalized[alias])
+                        break
+
+        elif tool_name == "analyze_error":
+            if "traceback_text" not in normalized:
+                for alias in ("error", "traceback", "error_message", "output"):
+                    if alias in normalized:
+                        normalized["traceback_text"] = str(normalized[alias])
+                        break
+
+        return normalized
+
+    @classmethod
     def parse_response(
         cls,
         raw_response: str,
@@ -114,26 +157,51 @@ Special 'finish' tool arguments when done:
             )
 
         if not isinstance(data, dict):
-            raise ToolProtocolError(f"Expected a JSON object, but got {type(data).__name__}.")
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                raise ToolProtocolError(f"Expected a JSON object, but got {type(data).__name__}.")
+
+        # Unwrap if encapsulated under container keys like 'decision', 'action', 'response'
+        for wrap_key in ("decision", "action_decision", "action", "tool_call", "response"):
+            if wrap_key in data and isinstance(data[wrap_key], dict) and any(k in data[wrap_key] for k in ("tool_name", "tool", "name")):
+                data = data[wrap_key]
+                break
 
         thought = data.get("thought")
         if not thought or not isinstance(thought, str):
             # Fallback if thought is missing
-            thought = data.get("reasoning", data.get("explanation", "Proceeding with next tool action."))
+            thought = str(data.get("reasoning", data.get("explanation", data.get("rationale", "Proceeding with next tool action."))))
 
-        plan = str(data.get("plan", ""))
+        plan = str(data.get("plan", data.get("step", "")))
 
-        tool_name = data.get("tool_name")
+        tool_name = (
+            data.get("tool_name")
+            or data.get("tool")
+            or data.get("name")
+            or data.get("action")
+            or data.get("function")
+        )
         if not tool_name or not isinstance(tool_name, str):
             raise ToolProtocolError("Missing required field 'tool_name' in JSON response.")
 
         tool_name = tool_name.strip()
 
-        tool_args = data.get("tool_args", {})
+        tool_args = data.get("tool_args")
+        if tool_args is None:
+            tool_args = data.get("args") or data.get("arguments") or data.get("parameters") or {}
+
+        if isinstance(tool_args, str):
+            try:
+                tool_args = json.loads(tool_args)
+            except Exception:
+                tool_args = {}
+
         if not isinstance(tool_args, dict):
-            raise ToolProtocolError(
-                f"Field 'tool_args' must be a JSON object, got {type(tool_args).__name__}."
-            )
+            tool_args = {}
+
+        # Normalize argument aliases across LLMs
+        tool_args = cls.normalize_tool_arguments(tool_name, tool_args)
 
         # Validate against tool list if provided
         if valid_tools is not None:

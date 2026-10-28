@@ -130,6 +130,8 @@ class CloudLLMClient:
     ) -> str:
         """Execute chat completion using Google's native Gemini generateContent REST API."""
         clean_model = (model or self.default_model).strip()
+        if ":" in clean_model or clean_model in ("gemma4:e2b", "gemma2", "llama3", "mistral", "phi3"):
+            clean_model = self.default_model
         if clean_model.startswith("models/"):
             clean_model = clean_model[len("models/"):]
 
@@ -283,6 +285,8 @@ class CloudLLMClient:
             )
 
         selected_model = model or self.default_model
+        if ":" in selected_model or selected_model in ("gemma4:e2b", "gemma2", "llama3", "mistral", "phi3"):
+            selected_model = self.default_model
 
         if self.is_gemini(selected_model):
             return self._call_gemini_native(

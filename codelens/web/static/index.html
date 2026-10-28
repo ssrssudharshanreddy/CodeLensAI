@@ -618,6 +618,17 @@
           ` : ''}
         `;
         container.appendChild(card);
+      } else if (event.type === 'warning') {
+        const card = document.createElement('div');
+        card.className = "p-3 rounded-lg border border-amber-700/50 bg-amber-950/25 text-xs space-y-1";
+        card.innerHTML = `
+          <div class="flex items-center space-x-1.5 text-amber-400 font-semibold">
+            <i data-lucide="alert-circle" class="h-3.5 w-3.5"></i>
+            <span>Agent Retry Notice</span>
+          </div>
+          <p class="text-amber-200 leading-relaxed">${escapeHtml(event.message)}</p>
+        `;
+        container.appendChild(card);
       } else if (event.type === 'done') {
         document.getElementById('agentStatusIndicator').innerText = `Completed (${event.status})`;
         document.getElementById('agentStatusIndicator').className = `text-xs px-2.5 py-1 rounded-full ${event.status === 'SOLVED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-900 text-slate-400'}`;

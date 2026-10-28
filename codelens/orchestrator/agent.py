@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any, List
 
 from codelens.config import CodeLensConfig
 from codelens.llm.ollama_client import OllamaClient, OllamaClientError
+from codelens.llm.cloud_client import CloudLLMClient
 from codelens.llm.protocol import ToolProtocol, ToolProtocolError, ActionDecision
 from codelens.tools.registry import ToolRegistry
 from codelens.tools.base import ToolResult
@@ -47,18 +48,26 @@ class CodeLensAgent:
         """
         Execute the autonomous agent loop for a given programming task or bug report.
         """
+        # Determine active model based on client type
+        active_model = (
+            self.config.cloud_model
+            if isinstance(self.client, CloudLLMClient)
+            else self.config.model_name
+        )
+        provider_name = "Cloud LLM" if isinstance(self.client, CloudLLMClient) else "Ollama"
+
         self.logger.banner(
             title="CodeLens AI - Autonomous Engineering Agent",
-            subtitle=f"Model: {self.config.model_name} | Workspace: {self.workspace_root}",
+            subtitle=f"{provider_name}: {active_model} | Workspace: {self.workspace_root}",
         )
 
         # 1. Pre-flight connectivity & model check
-        self.logger.log_info("Performing pre-flight connectivity and local model verification...")
+        self.logger.log_info(f"Performing pre-flight connectivity verification for {provider_name} ({active_model})...")
         try:
             self.client.check_connection()
-            model_info = self.client.verify_model(self.config.model_name)
+            model_info = self.client.verify_model(active_model)
             self.logger.log_info(
-                f"Verified local model '{model_info.name}' (family: {model_info.family or 'gemma'}, "
+                f"Verified model '{model_info.name}' (family: {model_info.family or 'local'}, "
                 f"parameters: {model_info.parameter_size or 'unknown'})."
             )
         except Exception as e:
@@ -123,13 +132,14 @@ class CodeLensAgent:
             # Append historical turns
             messages.extend(state.get_conversation_history(max_recent=6))
 
-            # Query Ollama
+            # Query LLM (Ollama or Cloud)
             decision: Optional[ActionDecision] = None
             for attempt in range(max_retries_per_step):
+                raw_resp = ""
                 try:
                     raw_resp = self.client.chat(
                         messages=messages,
-                        model=self.config.model_name,
+                        model=active_model,
                         format_json=True,
                         temperature=0.1,
                     )
@@ -144,6 +154,11 @@ class CodeLensAgent:
                         f"Protocol validation error on attempt {attempt + 1}/{max_retries_per_step}: {err}"
                     )
                     # Add corrective message to prompt for next attempt
+                    if raw_resp:
+                        messages.append({
+                            "role": "assistant",
+                            "content": raw_resp,
+                        })
                     messages.append({
                         "role": "user",
                         "content": ToolProtocol.build_format_reminder(str(err)),

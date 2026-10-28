@@ -55,3 +55,18 @@ def test_parse_response_schema_validation():
     decision = ToolProtocol.parse_response(raw_valid, valid_tools=["dummy_tool"], tool_schemas=schemas)
     assert decision.tool_args["path"] == "test.txt"
     assert decision.tool_args["count"] == 2
+
+
+def test_parse_response_aliases_and_unwrapping():
+    # Test action key alias, args alias, and argument name alias for inspect_file
+    raw_alias = '{"action": "inspect_file", "args": {"file_path": "foo.py"}, "explanation": "Reading file"}'
+    decision = ToolProtocol.parse_response(raw_alias, valid_tools=["inspect_file"])
+    assert decision.tool_name == "inspect_file"
+    assert decision.tool_args["path"] == "foo.py"
+    assert decision.thought == "Reading file"
+
+    # Test nested container wrapper
+    raw_nested = '{"decision": {"tool_name": "inspect_file", "tool_args": {"path": "bar.py"}}, "thought": "Checking"}'
+    decision_nested = ToolProtocol.parse_response(raw_nested, valid_tools=["inspect_file"])
+    assert decision_nested.tool_name == "inspect_file"
+    assert decision_nested.tool_args["path"] == "bar.py"

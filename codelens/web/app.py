@@ -90,6 +90,10 @@ class WebAgentLogger(AgentLogger):
             "uncertainty": uncertainty,
         })
 
+    def log_warning(self, message: str):
+        super().log_warning(message)
+        self.queue.put({"type": "warning", "message": message})
+
     def log_error(self, message: str):
         super().log_error(message)
         self.queue.put({"type": "error", "message": message})
@@ -147,16 +151,20 @@ async def get_status():
     is_connected = False
     model_details = {}
 
+    from codelens.llm.cloud_client import CloudLLMClient
+    active_provider = "cloud" if isinstance(client, CloudLLMClient) else "ollama"
+    active_model = cfg.cloud_model if isinstance(client, CloudLLMClient) else cfg.model_name
+
     try:
         is_connected = client.check_connection()
-        info = client.verify_model(cfg.model_name if cfg.provider != "cloud" else cfg.cloud_model)
+        info = client.verify_model(active_model)
         model_details = info.model_dump()
     except Exception as e:
         model_details = {"error": str(e)}
 
     return {
         "status": "online",
-        "provider": cfg.provider,
+        "provider": active_provider if cfg.provider == "auto" else cfg.provider,
         "is_connected": is_connected,
         "model_details": model_details,
         "workspace": str(cfg.workspace_dir),
