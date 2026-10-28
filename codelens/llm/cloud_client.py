@@ -47,10 +47,10 @@ class CloudLLMClient:
         # Detect default endpoint based on detected key if base_url is not explicit
         if base_url:
             self.base_url = base_url.rstrip("/")
-        elif os.getenv("GROQ_API_KEY"):
+        elif self.api_key.startswith("gsk_") or os.getenv("GROQ_API_KEY"):
             self.base_url = "https://api.groq.com/openai/v1"
             self.default_model = default_model if default_model != "gemini-2.0-flash" else "llama-3.3-70b-versatile"
-        elif os.getenv("OPENROUTER_API_KEY"):
+        elif self.api_key.startswith("sk-or-") or os.getenv("OPENROUTER_API_KEY"):
             self.base_url = "https://openrouter.ai/api/v1"
             self.default_model = default_model if default_model != "gemini-2.0-flash" else "google/gemini-2.0-flash-exp:free"
         else:
@@ -60,11 +60,16 @@ class CloudLLMClient:
 
         self.default_model = default_model
         self.timeout = timeout
+        self._cached_gemini_models: Optional[list[str]] = None
 
     def is_gemini(self, model: Optional[str] = None) -> bool:
         """Determine whether to route request to native Gemini REST endpoint."""
         target_model = (model or self.default_model or "").lower()
-        if "api.groq.com" in self.base_url or "openrouter.ai" in self.base_url or "api.openai.com" in self.base_url:
+        if self.api_key.startswith("gsk_") or "api.groq.com" in self.base_url:
+            return False
+        if self.api_key.startswith("sk-or-") or "openrouter.ai" in self.base_url:
+            return False
+        if "api.openai.com" in self.base_url:
             return False
         if self.api_key.startswith("AIza"):
             return True
@@ -74,6 +79,38 @@ class CloudLLMClient:
             return True
         return False
 
+    def _get_available_gemini_models(self) -> list[str]:
+        """Fetch list of active Gemini models supporting generateContent from Google API."""
+        if self._cached_gemini_models is not None:
+            return self._cached_gemini_models
+
+        models: list[str] = []
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "x-goog-api-key": self.api_key,
+                    "Content-Type": "application/json",
+                },
+                method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=6) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode("utf-8"))
+                    for m in data.get("models", []):
+                        methods = m.get("supportedGenerationMethods", [])
+                        if "generateContent" in methods:
+                            m_name = m.get("name", "")
+                            if m_name.startswith("models/"):
+                                m_name = m_name[len("models/"):]
+                            models.append(m_name)
+        except Exception:
+            pass
+
+        self._cached_gemini_models = models
+        return models
+
     def check_connection(self) -> bool:
         """Verify API key presence and connectivity to cloud endpoint."""
         if not self.api_key:
@@ -81,15 +118,8 @@ class CloudLLMClient:
 
         try:
             if self.is_gemini():
-                url = f"https://generativelanguage.googleapis.com/v1beta/models?key={self.api_key}"
-                req = urllib.request.Request(
-                    url,
-                    headers={
-                        "x-goog-api-key": self.api_key,
-                        "Content-Type": "application/json",
-                    },
-                    method="GET",
-                )
+                models = self._get_available_gemini_models()
+                return len(models) > 0 or bool(self.api_key)
             else:
                 url = f"{self.base_url}/models"
                 req = urllib.request.Request(
@@ -100,9 +130,8 @@ class CloudLLMClient:
                     },
                     method="GET",
                 )
-
-            with urllib.request.urlopen(req, timeout=8) as response:
-                return response.status == 200
+                with urllib.request.urlopen(req, timeout=8) as response:
+                    return response.status == 200
         except urllib.error.HTTPError as e:
             if e.code in (400, 401, 403):
                 return False
@@ -185,11 +214,23 @@ class CloudLLMClient:
         if clean_model.startswith("models/"):
             clean_model = clean_model[len("models/"):]
 
-        # If user/config still specified deprecated gemini-1.5-flash, ensure modern models are tried
-        models_to_try = [clean_model]
-        for fallback in ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"):
-            if fallback not in models_to_try:
-                models_to_try.append(fallback)
+        available = self._get_available_gemini_models()
+        if available:
+            models_to_try = []
+            if clean_model in available:
+                models_to_try.append(clean_model)
+            for preferred in ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash-002", "gemini-1.5-flash", "gemini-1.5-pro"):
+                if preferred in available and preferred not in models_to_try:
+                    models_to_try.append(preferred)
+            for m in available:
+                if m not in models_to_try:
+                    models_to_try.append(m)
+        else:
+            # Fallback sequence
+            models_to_try = [clean_model]
+            for fallback in ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"):
+                if fallback not in models_to_try:
+                    models_to_try.append(fallback)
 
         system_parts: list[dict[str, str]] = []
         contents: list[dict[str, Any]] = []
@@ -247,6 +288,14 @@ class CloudLLMClient:
                 raise CloudClientError(f"Unexpected error calling Gemini API: {e}")
 
         if last_exc:
+            if "404" in str(last_exc) and not available:
+                raise CloudClientError(
+                    "Google Generative Language API returned 404 for all models. "
+                    "This usually means the 'Generative Language API' is not enabled on your Google Cloud Project. "
+                    "To fix this, either: 1. Enable 'Generative Language API' in Google Cloud Console, or "
+                    "2. Generate a free key directly at Google AI Studio (https://aistudio.google.com/app/apikey), or "
+                    "3. Paste a free Groq API key (starts with 'gsk_') in Settings."
+                )
             raise last_exc
         raise CloudClientError("Failed to obtain response from Gemini API.")
 
